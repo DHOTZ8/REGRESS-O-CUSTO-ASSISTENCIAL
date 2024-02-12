@@ -1,0 +1,166 @@
+### REALIZAÇÃO DAS REGRESSÕES DE SÉRIE TEMPORAL
+
+### Importação da base de dados (csv)
+## Importanto blibliotecas
+
+import pandas as pd
+import numpy as np
+
+## Importando a base de dados
+
+custo_assis = pd.read_csv('C:/Users/danny/Downloads/TCC - MBA Puc Minas/Base de dados/Manual/base_de_dados.csv',sep = ";")
+print(custo_assis)
+custo_assis.info()
+
+###Configurando os dados do dataframe
+
+#Coluna custo de objeto para númerica
+custo_assis['custo'] = custo_assis['custo'].str.replace(',','.').astype(float)
+custo_assis.info()
+
+#Coluna de data de objeto para data
+from datetime import datetime
+custo_assis['Tempo'] = pd.to_datetime(custo_assis['Tempo'],format='%d/%m/%Y' )
+custo_assis.info()
+print(custo_assis)
+
+###Indexando a coluna
+custo_assis = custo_assis.set_index('Tempo')
+print(custo_assis)
+
+
+####Plotar gráfico
+
+import matplotlib.pyplot as plt
+plt.plot(custo_assis.index, custo_assis.custo)
+%matplotlib inline
+
+## Rodando o modelo ARIMA (vários modelos com AIC e BIC)
+# AIC: menores valores de AIC representam uma maior qualidade e simplicidade (penaliza a complexidade dos modelos e tende a favorecer a escolha de modelos mais simples)
+# BIC: o modelo com menor BIC é considerado o de melhor ajuste (pressupõem a existência de um “modelo verdadeiro” que descreve a relação entre a variável dependente e as diversas variáveis explanatórias)
+from sklearn.metrics import mean_squared_error
+from statsmodels.stats.stattools import jarque_bera
+
+
+!pip install pmdarima
+from pmdarima.arima import auto_arima
+
+stepwise=auto_arima(custo_assis,start_p=1,start_q=1,max_p=6,max_q=6,m=4,start_P=0,seasonal=True,d=1,D=1,trace=True,
+                    error_action='ignore',suppress_warnings=True,stepwise=True)
+
+stepwise1=auto_arima(custo_assis,start_p=1,start_q=1,max_p=6,max_q=6,m=4,start_P=0,seasonal=True,d=1,D=1,trace=True,
+                    error_action='ignore',suppress_warnings=True,stepwise=False)
+
+### Separação de base de treino e base de teste
+
+treino=custo_assis.loc['2015-01-01':'2019-10-01']
+teste=custo_assis.loc['2020-01-01':'2023-07-01']
+
+### Treinando o modelo
+stepwise.fit(treino)
+stepwise1.fit(treino)
+
+### Fazendo a predição
+future_forecast=stepwise.predict(n_periods=15)
+future_forecast1=stepwise1.predict(n_periods=15)
+
+### Transformando as previsões em dataframe
+future_forecast=pd.DataFrame(future_forecast,index=teste.index, columns=['previsão modelo 1'])
+future_forecast1=pd.DataFrame(future_forecast1,index=teste.index, columns=['previsão modelo 2'])
+
+### Visualizando as previsões
+future_forecast.head(5)
+future_forecast1.head(5)
+### Gráfico de comparação: Estimado x Real
+plt.figure(figsize=(20,5))
+pd.concat([teste,future_forecast,future_forecast1],axis=1).plot(figsize=(20,5))
+plt.xlabel('')
+plt.title('Previsões X Real',size=15)
+plt.legend(['Valor real','previsão 1','previsão 2'])
+plt.show()
+
+pd.concat([custo_assis,future_forecast],axis=1).plot(linewidth=1,figsize=(20,5))
+plt.legend('')
+plt.xlabel('')
+plt.title('Previsões X Real',size=15)
+plt.show()
+
+pd.concat([custo_assis,future_forecast1],axis=1).plot(linewidth=1,figsize=(20,5))
+plt.legend('')
+plt.xlabel('')
+plt.title('Previsões X Real',size=15)
+plt.show()
+
+### Resumo
+# Modelo 1
+stepwise.summary()
+
+# Modelo 2
+stepwise1.summary()
+
+## Análise de resíduos
+
+print("RMSE do modelo 1: %.3f" % np.sqrt(mean_squared_error(teste, future_forecast)))
+print('')
+print("RMSE do modelo 2: %.3f" % np.sqrt(mean_squared_error(teste, future_forecast1)))
+
+## Cálculo dos erros
+
+erros=pd.DataFrame(np.array(future_forecast.values.tolist())-np.array(teste.values.tolist()))
+
+erros1=pd.DataFrame(np.array(future_forecast1.values.tolist())-np.array(teste.values.tolist()))
+
+## Distribuição dos erros
+import seaborn as sns
+
+fig, ax = plt.subplots(1,2,figsize=(20,5))
+sns.histplot(erros,ax=ax[0])
+sns.histplot(erros1,ax=ax[1], color='red')
+
+stepwise.plot_diagnostics(lags=1, figsize=(10,6))
+stepwise1.plot_diagnostics(lags=1, figsize=(10,6))
+
+
+## Teste de Normalidade Jarque-Bera
+#Jarque-Bera:  testa se a distribuição dos dados é uma distribuição normal H0 em comparação com uma hipótese alternativa H1 em que os dados seguem alguma outra distribuição
+#Se p-value acima do nivel de significância de 5%, não se rejeita H0 - logo distribuição é normal - se rejeita H0, então H1 igual distribuição assintótica 
+
+### 5% de significância
+# Modelo 1
+teste = jarque_bera(erros)
+print('Estatística Jarque-Bera :', teste[0])
+print('p-valor :', teste[1])
+print('Assimetria :', teste[2])
+print('Curtose :',teste[3])
+
+# Modelo 2
+teste1 = jarque_bera(erros1)
+print('Estatística Jarque-Bera :', teste1[0])
+print('p-valor :', teste1[1])
+print('Assimetria :', teste1[2])
+print('Curtose :',teste1[3])
+
+### Fazendo previsão para o futuro
+
+stepwise.fit(custo_assis)
+
+future_forecast2=stepwise.predict(n_periods=5)
+
+future_forecast2=pd.DataFrame(future_forecast2, 
+                              index=pd.date_range(start='2023-10-01',
+                                                  end='2024-10-01', freq='MS'),columns=['Previsão de custo assistencial'])
+
+future_forecast2.head(5)
+
+### Plotando o gráfico das novas previsões
+
+plt.figure(figsize=(20,5))
+pd.concat([custo_assis,future_forecast2],axis=1).plot(figsize=(20,5))
+plt.xlabel('')
+plt.title('Série total e novas previsões',size=15)
+plt.legend(['Série total','Previsões'])
+plt.show();
+
+### Exportar resultados para o Excel
+
+future_forecast2.to_excel('Resultado regressão - custo para os próximos 5 trimestres.xlsx')
